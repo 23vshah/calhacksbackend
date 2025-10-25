@@ -1,0 +1,57 @@
+{
+  "query": {
+    "city": "test",
+    "keywords": [
+      "test"
+    ],
+    "min_subscribers": 1000,
+    "min_relevance_score": 0.0,
+    "max_results": 3
+  },
+  "stats": {
+    "total_found": 50,
+    "after_filtering": 38,
+    "selected": 3
+  },
+  "subreddits": [
+    {
+      "name": "Testosterone",
+      "title": "Testosterone",
+      "description": "This subreddit is for questions and discussion related to testosterone replacement therapy and testosterone. It also focuses on lifestyle activities like exercise and nutrition for raising testosterone levels naturally or anything else related to testosterone the substance.",
+      "subscribers": 204983,
+      "url": "https://www.reddit.com/r/Testosterone",
+      "created_utc": "2011-03-25T15:04:13",
+      "active_users": 0,
+      "over18": false,
+      "relevance_score": 95.0
+    },
+    {
+      "name": "drugtesthelp",
+      "title": "Get help with your drug test ",
+      "description": "The subreddit where you can get help for drug tests. ",
+      "subscribers": 50836,
+      "url": "https://www.reddit.com/r/drugtesthelp",
+      "created_utc": "2015-09-11T21:36:33",
+      "active_users": 0,
+      "over18": false,
+      "relevance_score": 95.0
+    },
+    {
+      "name": "AmericasTestKitchen",
+      "title": "All things America's Test Kitchen",
+      "description": "A place to discuss and post all things related to America's Test Kitchen Media including Cook's Illustrated, Cook's Country, ATK Radio, ATK News, and meta discussions.",
+      "subscribers": 36833,
+      "url": "https://www.reddit.com/r/AmericasTestKitchen",
+      "created_utc": "2016-02-18T13:54:46",
+      "active_users": 0,
+      "over18": false,
+      "relevance_score": 95.0
+    }
+  ],
+  "subreddit_names": [
+    "Testosterone",
+    "drugtesthelp",
+    "AmericasTestKitchen"
+  ],
+  "timestamp": "2025-10-25T12:24:49.848174"
+}

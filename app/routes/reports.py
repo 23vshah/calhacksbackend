@@ -16,11 +16,17 @@ async def generate_report(
     """Generate or retrieve cached city report"""
     
     try:
+        print(f"🚀 Starting report generation for {location} at {level} level")
         report_service = ReportGeneratorService()
         report = await report_service.generate_report(location, level, db)
+        print(f"✅ Report generation completed successfully")
         return report
         
     except Exception as e:
+        print(f"❌ Report generation failed: {str(e)}")
+        print(f"❌ Exception type: {type(e).__name__}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
 
 @router.get("/solution-details", response_model=SolutionDetailsResponse)

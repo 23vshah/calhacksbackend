@@ -188,50 +188,104 @@ Provide weights between 0-1 and clear reasoning for each."""
         print(f"🔍 Claude Provider - Processing data for {county}")
         print(f"Raw county_data: {county_data}")
         
+        # Extract and format data more intelligently
         data_summary = []
-        for metric, value in county_data.items():
-            data_summary.append(f"- {metric}: {value}")
+        context_info = []
+        
+        # Handle different data structures
+        if isinstance(county_data, dict):
+            # Check for hierarchical data structure
+            if 'target_data' in county_data:
+                # This is hierarchical analysis data
+                target_data = county_data.get('target_data', {})
+                geographic_context = county_data.get('geographic_context', {})
+                regional_trends = county_data.get('regional_trends', {})
+                balanced_analysis = county_data.get('balanced_analysis', {})
+                
+                data_summary.append(f"=== PRIMARY DATA FOR {county.upper()} ===")
+                for metric, value in target_data.items():
+                    if isinstance(value, dict):
+                        data_summary.append(f"- {metric}: {value.get('total', value.get('value', 'N/A'))} (trend: {value.get('trend', 'unknown')})")
+                    else:
+                        data_summary.append(f"- {metric}: {value}")
+                
+                if geographic_context:
+                    data_summary.append(f"\n=== GEOGRAPHIC CONTEXT ===")
+                    for key, value in geographic_context.items():
+                        data_summary.append(f"- {key}: {value}")
+                
+                if regional_trends:
+                    data_summary.append(f"\n=== REGIONAL TRENDS ===")
+                    for key, value in regional_trends.items():
+                        data_summary.append(f"- {key}: {value}")
+                
+                if balanced_analysis:
+                    data_summary.append(f"\n=== BALANCED ANALYSIS ===")
+                    for key, value in balanced_analysis.items():
+                        data_summary.append(f"- {key}: {value}")
+                        
+            else:
+                # Simple key-value data
+                for metric, value in county_data.items():
+                    data_summary.append(f"- {metric}: {value}")
         
         data_text = "\n".join(data_summary)
         print(f"📝 Data summary being sent to Claude:")
         print(f"{data_text[:500]}...")
         
-        prompt = f"""Based on this {county} data:
+        prompt = f"""You are an expert urban planning analyst specializing in community development and policy recommendations. Based on this comprehensive data analysis for {county}:
+
 {data_text}
 
-Generate 1-3 most pressing community problems. For each problem:
+Generate 2-4 most pressing community problems that require immediate policy intervention. For each problem, provide:
 
-1. Problem title (concise, 5-8 words)
-2. Problem description (2-3 sentences explaining the issue)
-3. Actionable solution (specific policy recommendation)
-4. Expected impact (quantifiable outcome)
+1. **Problem Analysis**: Clear identification of the issue with specific data points
+2. **Root Cause Analysis**: Why this problem exists in this community
+3. **Policy Solution**: Evidence-based policy recommendation with implementation steps
+4. **Expected Outcomes**: Quantifiable impact metrics
 
-Return JSON array:
+CRITICAL: Return ONLY a valid JSON array. No markdown, no explanations, no additional text. Start with [ and end with ].
+
+Return JSON array with this EXACT structure:
 [
   {{
-    "title": "Elevated Youth Arrest Rates",
-    "description": "18-29 age group shows 150% higher arrest rates than state average, indicating potential systemic issues with youth engagement and opportunity.",
+    "title": "Concise Problem Title (5-8 words)",
+    "description": "Detailed 2-3 sentence explanation of the problem, including specific data points and why it's concerning for this community. Reference actual numbers from the data.",
+    "severity": "high|medium|low",
     "solution": {{
-      "title": "Youth Intervention Programs",
-      "description": "Implement community-based diversion programs and mentorship initiatives targeting at-risk youth.",
-      "estimated_cost": "$2.5M annually",
-      "expected_impact": "20-30% reduction in youth recidivism within 2 years"
+      "title": "Specific Policy Solution Name",
+      "description": "Detailed implementation plan with specific steps, partnerships needed, and timeline. Reference successful implementations in similar communities.",
+      "estimated_cost": "Realistic cost estimate with funding sources (e.g., '$2.5M annually from state grants and local budget')",
+      "expected_impact": "Specific, measurable outcomes with timeline (e.g., '25% reduction in youth arrests within 18 months')"
     }},
-    "severity": "high",
     "metrics": {{
-      "violent_arrests": 949,
-      "property_arrests": 1593,
-      "state_comparison": "+45%"
+      "current_value": "Current metric value from data",
+      "target_value": "Realistic target after intervention",
+      "comparison": "How this compares to regional/state averages",
+      "trend": "Current trend direction"
     }}
   }}
 ]
 
-Focus on actionable, data-driven insights."""
+**Requirements:**
+- Use actual data points from the analysis
+- Focus on problems that can be addressed through local government action
+- Solutions must be implementable by city/county government
+- Include specific metrics and comparisons
+- Prioritize problems with the highest community impact
+- Consider equity and social justice implications
+
+**Severity Guidelines:**
+- HIGH: Immediate threat to public safety, health, or economic stability
+- MEDIUM: Significant quality of life impact or economic concern
+- LOW: Important but not urgent community improvement opportunity
+
+Generate actionable, data-driven policy recommendations that a local government could implement within 6-18 months."""
 
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=3000,
+                max_tokens=4000,  # Increased token limit
                 messages=[{"role": "user", "content": prompt}]
             )
             
@@ -244,13 +298,58 @@ Focus on actionable, data-driven insights."""
             # Extract JSON from markdown code blocks if present
             content = extract_json_from_markdown(content)
             
+            # Try to fix common JSON issues
+            content = self._fix_json_response(content)
+            
             problems = json.loads(content)
+            print(f"✅ Successfully parsed {len(problems)} problems from Claude")
             return problems
             
         except json.JSONDecodeError as e:
-            raise Exception(f"Claude problem synthesis failed: Invalid JSON response. Content: {content[:200]}...")
+            print(f"❌ JSON Decode Error: {str(e)}")
+            print(f"❌ Full response content: {content}")
+            raise Exception(f"Claude problem synthesis failed: Invalid JSON response. Error: {str(e)}. Content: {content[:500]}...")
         except Exception as e:
+            print(f"❌ General Error: {str(e)}")
+            # Only print content if it exists (not for connection errors)
+            if 'content' in locals():
+                print(f"❌ Full response content: {content}")
+            else:
+                print(f"❌ No response content available (connection error)")
             raise Exception(f"Claude problem synthesis failed: {str(e)}")
+    
+    def _fix_json_response(self, content: str) -> str:
+        """Fix common JSON issues in Claude responses"""
+        content = content.strip()
+        
+        # Remove any text after the JSON array/object
+        # Find the last complete JSON structure
+        if content.startswith('['):
+            # Find the matching closing bracket
+            bracket_count = 0
+            last_valid_pos = -1
+            for i, char in enumerate(content):
+                if char == '[':
+                    bracket_count += 1
+                elif char == ']':
+                    bracket_count -= 1
+                    if bracket_count == 0:
+                        last_valid_pos = i
+                        break
+            
+            if last_valid_pos > 0:
+                content = content[:last_valid_pos + 1]
+        
+        # Remove trailing commas before closing brackets
+        content = re.sub(r',(\s*[}\]])', r'\1', content)
+        
+        # Ensure it's a valid JSON array
+        if not content.startswith('['):
+            # If it's a single object, wrap it in an array
+            if content.startswith('{'):
+                content = '[' + content + ']'
+        
+        return content
     
     def _generate_strategy_sync(self, prompt: str) -> Dict[str, Any]:
         """Generate aggregation strategy (Claude sync version)"""
@@ -402,43 +501,96 @@ Provide weights between 0-1 and clear reasoning for each."""
     async def synthesize_problems(self, county_data: Dict[str, Any], county: str) -> List[Dict[str, Any]]:
         """Synthesize problems and solutions from county data"""
         
+        # Extract and format data more intelligently
         data_summary = []
-        for metric, value in county_data.items():
-            data_summary.append(f"- {metric}: {value}")
+        
+        # Handle different data structures
+        if isinstance(county_data, dict):
+            # Check for hierarchical data structure
+            if 'target_data' in county_data:
+                # This is hierarchical analysis data
+                target_data = county_data.get('target_data', {})
+                geographic_context = county_data.get('geographic_context', {})
+                regional_trends = county_data.get('regional_trends', {})
+                balanced_analysis = county_data.get('balanced_analysis', {})
+                
+                data_summary.append(f"=== PRIMARY DATA FOR {county.upper()} ===")
+                for metric, value in target_data.items():
+                    if isinstance(value, dict):
+                        data_summary.append(f"- {metric}: {value.get('total', value.get('value', 'N/A'))} (trend: {value.get('trend', 'unknown')})")
+                    else:
+                        data_summary.append(f"- {metric}: {value}")
+                
+                if geographic_context:
+                    data_summary.append(f"\n=== GEOGRAPHIC CONTEXT ===")
+                    for key, value in geographic_context.items():
+                        data_summary.append(f"- {key}: {value}")
+                
+                if regional_trends:
+                    data_summary.append(f"\n=== REGIONAL TRENDS ===")
+                    for key, value in regional_trends.items():
+                        data_summary.append(f"- {key}: {value}")
+                
+                if balanced_analysis:
+                    data_summary.append(f"\n=== BALANCED ANALYSIS ===")
+                    for key, value in balanced_analysis.items():
+                        data_summary.append(f"- {key}: {value}")
+                        
+            else:
+                # Simple key-value data
+                for metric, value in county_data.items():
+                    data_summary.append(f"- {metric}: {value}")
         
         data_text = "\n".join(data_summary)
         
-        prompt = f"""Based on this {county} data:
+        prompt = f"""You are an expert urban planning analyst specializing in community development and policy recommendations. Based on this comprehensive data analysis for {county}:
+
 {data_text}
 
-Generate 1-3 most pressing community problems. For each problem:
+Generate 2-4 most pressing community problems that require immediate policy intervention. For each problem, provide:
 
-1. Problem title (concise, 5-8 words)
-2. Problem description (2-3 sentences explaining the issue)
-3. Actionable solution (specific policy recommendation)
-4. Expected impact (quantifiable outcome)
+1. **Problem Analysis**: Clear identification of the issue with specific data points
+2. **Root Cause Analysis**: Why this problem exists in this community
+3. **Policy Solution**: Evidence-based policy recommendation with implementation steps
+4. **Expected Outcomes**: Quantifiable impact metrics
 
-Return JSON array:
+CRITICAL: Return ONLY a valid JSON array. No markdown, no explanations, no additional text. Start with [ and end with ].
+
+Return JSON array with this EXACT structure:
 [
   {{
-    "title": "Elevated Youth Arrest Rates",
-    "description": "18-29 age group shows 150% higher arrest rates than state average, indicating potential systemic issues with youth engagement and opportunity.",
+    "title": "Concise Problem Title (5-8 words)",
+    "description": "Detailed 2-3 sentence explanation of the problem, including specific data points and why it's concerning for this community. Reference actual numbers from the data.",
+    "severity": "high|medium|low",
     "solution": {{
-      "title": "Youth Intervention Programs",
-      "description": "Implement community-based diversion programs and mentorship initiatives targeting at-risk youth.",
-      "estimated_cost": "$2.5M annually",
-      "expected_impact": "20-30% reduction in youth recidivism within 2 years"
+      "title": "Specific Policy Solution Name",
+      "description": "Detailed implementation plan with specific steps, partnerships needed, and timeline. Reference successful implementations in similar communities.",
+      "estimated_cost": "Realistic cost estimate with funding sources (e.g., '$2.5M annually from state grants and local budget')",
+      "expected_impact": "Specific, measurable outcomes with timeline (e.g., '25% reduction in youth arrests within 18 months')"
     }},
-    "severity": "high",
     "metrics": {{
-      "violent_arrests": 949,
-      "property_arrests": 1593,
-      "state_comparison": "+45%"
+      "current_value": "Current metric value from data",
+      "target_value": "Realistic target after intervention",
+      "comparison": "How this compares to regional/state averages",
+      "trend": "Current trend direction"
     }}
   }}
 ]
 
-Focus on actionable, data-driven insights."""
+**Requirements:**
+- Use actual data points from the analysis
+- Focus on problems that can be addressed through local government action
+- Solutions must be implementable by city/county government
+- Include specific metrics and comparisons
+- Prioritize problems with the highest community impact
+- Consider equity and social justice implications
+
+**Severity Guidelines:**
+- HIGH: Immediate threat to public safety, health, or economic stability
+- MEDIUM: Significant quality of life impact or economic concern
+- LOW: Important but not urgent community improvement opportunity
+
+Generate actionable, data-driven policy recommendations that a local government could implement within 6-18 months."""
 
         try:
             response = await self.client.chat.completions.create(

@@ -104,3 +104,70 @@ class MetricWeight(BaseModel):
     weight: float
     reasoning: str
 
+# City Goals Models
+class CityGoalCreate(BaseModel):
+    city_name: str
+    goal_title: str
+    goal_description: str
+    target_metric: str
+    target_value: Optional[float] = None
+    target_unit: Optional[str] = None
+    priority_level: str = "medium"
+    deadline: Optional[datetime] = None
+    metadata_json: Optional[str] = None
+
+class CityGoalResponse(BaseModel):
+    id: int
+    city_name: str
+    goal_title: str
+    goal_description: str
+    target_metric: str
+    target_value: Optional[float] = None
+    target_unit: Optional[str] = None
+    priority_level: str
+    deadline: Optional[datetime] = None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+class PolicyDocumentCreate(BaseModel):
+    source: str
+    title: str
+    content: str
+    document_type: str
+    geographic_scope: str
+    topic_tags: List[str] = []
+
+class PolicyDocumentResponse(BaseModel):
+    id: int
+    source: str
+    title: str
+    content: str
+    document_type: str
+    geographic_scope: str
+    topic_tags: List[str]
+    created_at: datetime
+    is_active: str
+
+class GoalRecommendationResponse(BaseModel):
+    id: int
+    city_goal_id: int
+    problem_id: str
+    policy_document_id: int
+    similarity_score: float
+    recommendation_text: str
+    implementation_steps: List[str]
+    estimated_impact: str
+    created_at: datetime
+
+class TrainGoalsRequest(BaseModel):
+    city_name: str
+    goals: List[CityGoalCreate]
+    policy_documents: Optional[List[PolicyDocumentCreate]] = []
+
+class RAGQueryRequest(BaseModel):
+    city_name: str
+    problem_description: str
+    current_data: Dict[str, Any]
+    max_recommendations: int = 5
+

@@ -71,17 +71,75 @@ class IntelligentAggregator:
             # Fallback to default strategy
             return self._get_default_strategy()
     
-    async def execute_strategy(self, county: str, strategy: Dict[str, Any], db: AsyncSession) -> Dict[str, Any]:
+    async def execute_strategy(self, location: str, level: str, strategy: Dict[str, Any], db: AsyncSession) -> Dict[str, Any]:
         """STAGE 2: Automated Profiling & Adjustment"""
         
-        # Get all data points for the county
+        # Get all datasets and check their geographic hierarchy to find matching location at the specified level
+        from app.database import Dataset
+        datasets_result = await db.execute(select(Dataset))
+        datasets = datasets_result.scalars().all()
+        
+        # Find datasets that match the requested location at the specified level
+        matching_dataset_ids = []
+        for dataset in datasets:
+            try:
+                import json
+                hierarchy = json.loads(dataset.geographic_hierarchy_json)
+                
+                # Check if this dataset matches the requested location at the specified level
+                location_lower = location.lower()
+                is_match = False
+                
+                if level == 'county':
+                    # Match county to county
+                    dataset_county = hierarchy.get('county', '').lower()
+                    if dataset_county and location_lower in dataset_county:
+                        is_match = True
+                        print(f"✅ County match: dataset county '{hierarchy.get('county', 'N/A')}' matches requested '{location}'")
+                elif level == 'city':
+                    # Match city to city
+                    dataset_city = hierarchy.get('city', '').lower()
+                    if dataset_city and location_lower in dataset_city:
+                        is_match = True
+                        print(f"✅ City match: dataset city '{hierarchy.get('city', 'N/A')}' matches requested '{location}'")
+                elif level == 'neighborhood':
+                    # Match neighborhood to neighborhood
+                    dataset_neighborhood = hierarchy.get('neighborhood', '').lower()
+                    if dataset_neighborhood and location_lower in dataset_neighborhood:
+                        is_match = True
+                        print(f"✅ Neighborhood match: dataset neighborhood '{hierarchy.get('neighborhood', 'N/A')}' matches requested '{location}'")
+                else:
+                    # For other levels, check all hierarchy levels
+                    for level_name, value in hierarchy.items():
+                        if value and location_lower in value.lower():
+                            is_match = True
+                            print(f"✅ {level_name} match: '{value}' matches requested '{location}'")
+                            break
+                
+                if is_match:
+                    matching_dataset_ids.append(dataset.id)
+                    print(f"✅ Including dataset: {dataset.name}")
+                else:
+                    print(f"❌ Dataset '{dataset.name}' doesn't match at {level} level (hierarchy: {hierarchy})")
+                    
+            except (json.JSONDecodeError, AttributeError) as e:
+                print(f"⚠️ Error parsing hierarchy for dataset {dataset.name}: {e}")
+                continue
+        
+        if not matching_dataset_ids:
+            print(f"❌ No datasets found for {level} '{location}'")
+            return {}
+        
+        # Get all data points from matching datasets
         result = await db.execute(
             select(DataPoint)
-            .where(DataPoint.county == county)
+            .where(DataPoint.dataset_id.in_(matching_dataset_ids))
         )
         data_points = result.scalars().all()
+        print(f"🔍 Intelligent aggregator found {len(data_points)} data points from {len(matching_dataset_ids)} matching datasets for {level} '{location}'")
         
         if not data_points:
+            print(f"❌ No data points found for {level} '{location}'")
             return {}
         
         # Apply intelligent time filtering
@@ -256,7 +314,8 @@ class IntelligentAggregator:
         filtered_points = []
         
         for point in data_points:
-            if not point.year:
+            # Skip points with invalid year data
+            if not point.year or not isinstance(point.year, (int, float)):
                 continue
                 
             # Determine focus period based on data type
@@ -267,8 +326,13 @@ class IntelligentAggregator:
             else:
                 focus_years = 2  # Last 2 years for other data
             
-            if point.year >= (current_year - focus_years):
-                filtered_points.append(point)
+            # Ensure year is a valid integer
+            try:
+                year_int = int(point.year)
+                if year_int >= (current_year - focus_years):
+                    filtered_points.append(point)
+            except (ValueError, TypeError):
+                continue
         
         return filtered_points
     

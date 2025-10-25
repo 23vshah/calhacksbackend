@@ -39,6 +39,25 @@ class ReportGeneratorService:
         print(f"Sample data: {str(location_data)[:500]}...")
         
         problems = await self.llm_service.synthesize_problems(location_data, location)
+        print(f"📊 LLM returned {len(problems)} problems")
+        
+        # Format problems with error handling
+        formatted_problems = []
+        for i, problem_data in enumerate(problems):
+            try:
+                print(f"🔧 Processing problem {i+1}/{len(problems)}: {problem_data.get('title', 'Unknown')}")
+                formatted_problem = self._format_problem(problem_data, location)
+                formatted_problems.append(formatted_problem)
+            except Exception as e:
+                print(f"❌ Failed to format problem {i+1}: {str(e)}")
+                print(f"❌ Problem data: {problem_data}")
+                # Continue with other problems instead of failing completely
+                continue
+        
+        if not formatted_problems:
+            raise Exception("No valid problems could be formatted from LLM response")
+        
+        print(f"✅ Successfully formatted {len(formatted_problems)} problems")
         
         # Create report
         report = CityReport(
@@ -51,7 +70,7 @@ class ReportGeneratorService:
                 "geographic_level": level,
                 "relevant_datasets": [d.name for d in relevant_datasets]
             },
-            problems=[self._format_problem(problem, location) for problem in problems]
+            problems=formatted_problems
         )
         
         # Cache the report
@@ -270,16 +289,36 @@ class ReportGeneratorService:
     
     def _format_problem(self, problem_data: Dict[str, Any], county: str) -> Problem:
         """Format Claude's problem data into Problem model"""
-        problem_id = f"{county.lower().replace(' ', '_')}_{hash(problem_data['title']) % 1000:03d}"
-        
-        return Problem(
-            id=problem_id,
-            title=problem_data["title"],
-            severity=problem_data.get("severity", "medium"),
-            description=problem_data["description"],
-            metrics=problem_data.get("metrics", {}),
-            solution=problem_data["solution"]
-        )
+        try:
+            print(f"🔧 Formatting problem: {problem_data.get('title', 'Unknown')}")
+            print(f"🔧 Problem data keys: {list(problem_data.keys())}")
+            
+            problem_id = f"{county.lower().replace(' ', '_')}_{hash(problem_data['title']) % 1000:03d}"
+            
+            # Validate required fields
+            if 'title' not in problem_data:
+                raise ValueError("Missing 'title' field in problem data")
+            if 'description' not in problem_data:
+                raise ValueError("Missing 'description' field in problem data")
+            if 'solution' not in problem_data:
+                raise ValueError("Missing 'solution' field in problem data")
+            
+            problem = Problem(
+                id=problem_id,
+                title=problem_data["title"],
+                severity=problem_data.get("severity", "medium"),
+                description=problem_data["description"],
+                metrics=problem_data.get("metrics", {}),
+                solution=problem_data["solution"]
+            )
+            
+            print(f"✅ Problem formatted successfully: {problem.title}")
+            return problem
+            
+        except Exception as e:
+            print(f"❌ Error formatting problem: {str(e)}")
+            print(f"❌ Problem data: {problem_data}")
+            raise
     
     async def _cache_report(self, report: CityReport, db: AsyncSession):
         """Cache the generated report"""
@@ -325,7 +364,7 @@ class ReportGeneratorService:
             # STAGE 3: Execute strategy with geographic context
             print("⚙️ STAGE 3: Executing strategy with geographic context...")
             aggregated_data = await self.intelligent_aggregator.execute_strategy(
-                location, strategy, db
+                location, level, strategy, db
             )
             print(f"✅ Aggregated data: {len(aggregated_data)} metrics")
             
@@ -473,22 +512,11 @@ class ReportGeneratorService:
                         break
                 
                 if is_relevant:
-                    # Get data points from this dataset
-                    if location.lower() == "san francisco":
-                        # For city-level, get all neighborhoods in that city
-                        # Query by metadata_json containing the city name
-                        result = await db.execute(
-                            select(DataPoint)
-                            .where(DataPoint.dataset_id == dataset.id)
-                            .where(DataPoint.metadata_json.like(f'%{location}%'))
-                        )
-                    else:
-                        # For specific neighborhoods, query by exact name
-                        result = await db.execute(
-                            select(DataPoint)
-                            .where(DataPoint.dataset_id == dataset.id)
-                            .where(DataPoint.county == location)
-                        )
+                    # Get all data points from this dataset (no metadata filtering)
+                    result = await db.execute(
+                        select(DataPoint)
+                        .where(DataPoint.dataset_id == dataset.id)
+                    )
                     
                     dataset_points = result.scalars().all()
                     data_points.extend(dataset_points)

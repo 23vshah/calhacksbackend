@@ -1,0 +1,72 @@
+[
+  {
+    "offense_type": "Street or sidewalk cleaning",
+    "address": "4214 Geary Blvd",
+    "coordinates": "(37.78115948, -122.46452375)",
+    "description": "One mattress dumped on the sidewalk with some small loose litter nearby. Remove the mattress and sweep up the small debris. Reported with Solve SF.",
+    "offense_id": "#101002857947"
+  },
+  {
+    "offense_type": "Blocked driveway & illegal parking",
+    "address": "1316 Pine St Block drive way",
+    "coordinates": "(37.79008633, -122.41759557)",
+    "description": "Block drive way",
+    "offense_id": "#101002857946"
+  },
+  {
+    "offense_type": "Street or sidewalk cleaning",
+    "address": "71 Naples St",
+    "coordinates": "(37.72753376, -122.42596812)",
+    "description": "Poop.... Feces on asphalt in the street; single pile. Remove and sanitize; pressure wash the area on the hard surface for public health. Reported with Solve SF.",
+    "offense_id": "#101002857944"
+  },
+  {
+    "offense_type": "Graffiti",
+    "address": "2972 16 Th St",
+    "coordinates": "(37.76517043, -122.41906416)",
+    "description": "Safe, clean, well-cared-for neighborhoods are not luxuries but a necessity of the human spirit. Yet for years public officials have ignored upholding established codes and regulations by failing to provide proactive services and code enforcement uphold community standards.... Tagging on commercial storefront facade and on boarded window; please post NOV, issue blight citation, and remove graffiti. Reported with Solve SF.",
+    "offense_id": "#101002857943"
+  },
+  {
+    "offense_type": "Blocked driveway & illegal parking",
+    "address": "110 Appleton Ave In st",
+    "coordinates": "(37.73808684, -122.42223596)",
+    "description": "In street... Gray Honda CRV SUV is double parked in the travel lane next to cars at the curb, blocking the lane; please cite this vehicle. Reported with Solve SF.",
+    "offense_id": "#101002857942"
+  },
+  {
+    "offense_type": "Street or sidewalk cleaning",
+    "address": "290 Brighton Ave",
+    "coordinates": "(37.72352973, -122.45519176)",
+    "description": "Dumping",
+    "offense_id": "#101002857938"
+  },
+  {
+    "offense_type": "Graffiti",
+    "address": "2940 20 Th St",
+    "coordinates": "(37.75925107, -122.41050826)",
+    "description": "Graffiti removal",
+    "offense_id": "#101002857937"
+  },
+  {
+    "offense_type": "Graffiti",
+    "address": "2960 16 Th St",
+    "coordinates": "(37.76514926, -122.41873148)",
+    "description": "Safe, clean, well-cared-for neighborhoods are not luxuries but a necessity of the human spirit. Yet for years public officials have ignored upholding established codes and regulations by failing to provide proactive services and code enforcement uphold community standards.... Multiple tags on the side wall of a commercial building; remove graffiti, post NOV, issue blight citation. Reported with Solve SF.",
+    "offense_id": "#101002857934"
+  },
+  {
+    "offense_type": "Street or sidewalk cleaning",
+    "address": "1285 Ocean Ave",
+    "coordinates": "(37.72365039, -122.45610036)",
+    "description": "Household garbage mostly bagged",
+    "offense_id": "#101002857936"
+  },
+  {
+    "offense_type": "Graffiti",
+    "address": "93 Capp St",
+    "coordinates": "(37.76531377, -122.41849347)",
+    "description": "Safe, clean, well-cared-for neighborhoods are not luxuries but a necessity of the human spirit. Yet for years public officials have ignored upholding established codes and regulations by failing to provide proactive services and code enforcement uphold community standards.... Multiple white spray-paint tags on the ground-level brick wall of a commercial corner building; post an NOV, issue a blight citation, and remove the graffiti. Reported with Solve SF.",
+    "offense_id": "#101002857932"
+  }
+]

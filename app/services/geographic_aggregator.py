@@ -68,7 +68,10 @@ class GeographicAggregator:
         datasets = datasets_result.scalars().all()
         
         data_points = []
+        print(f"🔍 Getting location data for {location} at {level} level from {len(datasets)} datasets")
         
+        # Batch query optimization: collect all relevant dataset IDs first
+        relevant_dataset_ids = []
         for dataset in datasets:
             try:
                 import json
@@ -78,41 +81,68 @@ class GeographicAggregator:
                 location_lower = location.lower()
                 is_relevant = False
                 
-                # Check each level of the hierarchy
-                for level_name, value in hierarchy.items():
-                    if value and location_lower in value.lower():
+                # Check specific hierarchy levels based on the requested level
+                if level == 'county':
+                    # For county-level, check if the dataset's county matches
+                    dataset_county = hierarchy.get('county', '').lower()
+                    if dataset_county and location_lower in dataset_county:
                         is_relevant = True
-                        break
+                        print(f"✅ County match: dataset county '{hierarchy.get('county', 'N/A')}' matches requested '{location}'")
+                elif level == 'city':
+                    # For city-level, check if the dataset's city matches
+                    dataset_city = hierarchy.get('city', '').lower()
+                    if dataset_city and location_lower in dataset_city:
+                        is_relevant = True
+                        print(f"✅ City match: dataset city '{hierarchy.get('city', 'N/A')}' matches requested '{location}'")
+                elif level == 'neighborhood':
+                    # For neighborhood-level, check if the dataset's neighborhood matches
+                    dataset_neighborhood = hierarchy.get('neighborhood', '').lower()
+                    if dataset_neighborhood and location_lower in dataset_neighborhood:
+                        is_relevant = True
+                        print(f"✅ Neighborhood match: dataset neighborhood '{hierarchy.get('neighborhood', 'N/A')}' matches requested '{location}'")
+                else:
+                    # For other levels, check all hierarchy levels
+                    for level_name, value in hierarchy.items():
+                        if value and location_lower in value.lower():
+                            is_relevant = True
+                            print(f"✅ {level_name} match: '{value}' matches requested '{location}'")
+                            break
                 
                 if is_relevant:
-                    # Get data points from this dataset
-                    if level == 'neighborhood':
-                        # For neighborhood-level, query by exact name
-                        result = await db.execute(
-                            select(DataPoint)
-                            .where(DataPoint.dataset_id == dataset.id)
-                            .where(DataPoint.county == location)
-                        )
-                    elif level == 'city':
-                        # For city-level, get all neighborhoods in that city
-                        result = await db.execute(
-                            select(DataPoint)
-                            .where(DataPoint.dataset_id == dataset.id)
-                            .where(DataPoint.metadata_json.like(f'%{location}%'))
-                        )
-                    else:
-                        # For other levels, use the field mapping
-                        result = await db.execute(
-                            select(DataPoint)
-                            .where(DataPoint.dataset_id == dataset.id)
-                            .where(getattr(DataPoint, field) == location)
-                        )
-                    
-                    dataset_points = result.scalars().all()
-                    data_points.extend(dataset_points)
+                    relevant_dataset_ids.append(dataset.id)
+                    print(f"✅ Including dataset: {dataset.name}")
                     
             except (json.JSONDecodeError, AttributeError) as e:
                 continue
+        
+        # Execute single batch query for all relevant datasets
+        if relevant_dataset_ids:
+            print(f"🔍 Executing batch query for {len(relevant_dataset_ids)} datasets")
+            if level == 'neighborhood':
+                # For neighborhood-level, query by exact name
+                result = await db.execute(
+                    select(DataPoint)
+                    .where(DataPoint.dataset_id.in_(relevant_dataset_ids))
+                    .where(DataPoint.county == location)
+                )
+            elif level == 'city':
+                # For city-level, get all data points from matching datasets (no additional filtering needed)
+                result = await db.execute(
+                    select(DataPoint)
+                    .where(DataPoint.dataset_id.in_(relevant_dataset_ids))
+                )
+            else:
+                # For other levels, use the field mapping
+                result = await db.execute(
+                    select(DataPoint)
+                    .where(DataPoint.dataset_id.in_(relevant_dataset_ids))
+                    .where(getattr(DataPoint, field) == location)
+                )
+            
+            data_points = result.scalars().all()
+            print(f"✅ Batch query found {len(data_points)} data points")
+        else:
+            print(f"❌ No relevant datasets found for {location}")
         
         return await self._aggregate_location_data(data_points, location, level)
     
@@ -121,7 +151,7 @@ class GeographicAggregator:
         
         context_levels = {
             'neighborhood': 'city',
-            'city': 'county', 
+            'city': 'neighborhood',  # For city-level, get neighborhood context
             'county': 'region',
             'region': 'state'
         }
@@ -130,18 +160,69 @@ class GeographicAggregator:
         if not context_level:
             return {}
         
-        # Get all locations at the context level
-        result = await db.execute(
-            select(DataPoint.county).distinct()
-        )
-        all_locations = [row[0] for row in result.fetchall()]
-        
-        # Aggregate across all locations at context level
-        context_data = {}
-        for loc in all_locations:
-            loc_data = await self._get_location_data(loc, context_level, db)
-            if loc_data:
-                context_data[loc] = loc_data
+        # For city-level requests, get all neighborhoods in that city
+        if level == 'city':
+            # Get all neighborhoods from the same datasets as the city
+            from app.database import Dataset
+            datasets_result = await db.execute(select(Dataset))
+            datasets = datasets_result.scalars().all()
+            
+            # Find datasets that match the city
+            matching_dataset_ids = []
+            for dataset in datasets:
+                try:
+                    import json
+                    hierarchy = json.loads(dataset.geographic_hierarchy_json)
+                    dataset_city = hierarchy.get('city', '').lower()
+                    if dataset_city and location.lower() in dataset_city:
+                        matching_dataset_ids.append(dataset.id)
+                except:
+                    continue
+            
+            if matching_dataset_ids:
+                # Get all data points from matching datasets
+                result = await db.execute(
+                    select(DataPoint)
+                    .where(DataPoint.dataset_id.in_(matching_dataset_ids))
+                )
+                all_data_points = result.scalars().all()
+                
+                # Group by neighborhood (from metadata)
+                neighborhood_data = {}
+                for point in all_data_points:
+                    try:
+                        metadata = json.loads(point.metadata_json) if point.metadata_json else {}
+                        neighborhood = metadata.get('neighborhood', 'Unknown')
+                        if neighborhood not in neighborhood_data:
+                            neighborhood_data[neighborhood] = []
+                        neighborhood_data[neighborhood].append(point)
+                    except:
+                        continue
+                
+                # Aggregate data for each neighborhood
+                context_data = {}
+                for neighborhood, points in neighborhood_data.items():
+                    if points:
+                        loc_data = await self._aggregate_location_data(points, neighborhood, 'neighborhood')
+                        if loc_data:
+                            context_data[neighborhood] = loc_data
+                
+                return context_data
+            else:
+                return {}
+        else:
+            # For other levels, use the original logic
+            result = await db.execute(
+                select(DataPoint.county).distinct()
+            )
+            all_locations = [row[0] for row in result.fetchall()]
+            
+            # Aggregate across all locations at context level
+            context_data = {}
+            for loc in all_locations:
+                loc_data = await self._get_location_data(loc, context_level, db)
+                if loc_data:
+                    context_data[loc] = loc_data
         
         return context_data
     
