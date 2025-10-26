@@ -38,15 +38,31 @@ class ReportGeneratorService:
         print(f"Data keys: {list(location_data.keys()) if isinstance(location_data, dict) else 'Not a dict'}")
         print(f"Sample data: {str(location_data)[:500]}...")
         
-        problems = await self.llm_service.synthesize_problems(location_data, location)
-        print(f"📊 LLM returned {len(problems)} problems")
+        llm_response = await self.llm_service.synthesize_problems(location_data, location)
+        print(f"📊 LLM returned response type: {type(llm_response)}")
+        
+        # Handle new comprehensive structure
+        if isinstance(llm_response, dict) and 'cityInfo' in llm_response:
+            # New structure with cityInfo, problems
+            city_info = llm_response.get('cityInfo', {})
+            problems = llm_response.get('problems', [])
+            
+            print(f"📊 Found {len(problems)} problems with comprehensive city info")
+            
+            # Update location if provided in cityInfo
+            city_name = city_info.get('name') or location
+        else:
+            # Fallback for old structure
+            problems = llm_response if isinstance(llm_response, list) else []
+            city_info = {}
+            city_name = location
         
         # Format problems with error handling
         formatted_problems = []
         for i, problem_data in enumerate(problems):
             try:
                 print(f"🔧 Processing problem {i+1}/{len(problems)}: {problem_data.get('title', 'Unknown')}")
-                formatted_problem = self._format_problem(problem_data, location)
+                formatted_problem = self._format_problem(problem_data, city_name)
                 formatted_problems.append(formatted_problem)
             except Exception as e:
                 print(f"❌ Failed to format problem {i+1}: {str(e)}")
@@ -59,17 +75,52 @@ class ReportGeneratorService:
         
         print(f"✅ Successfully formatted {len(formatted_problems)} problems")
         
+        # Extract comprehensive city data from cityInfo if available
+        metrics = city_info.get('metrics', {})
+        demographics = city_info.get('demographics', {})
+        economic_indicators = city_info.get('economicIndicators', {})
+        infrastructure_metrics = city_info.get('infrastructureMetrics', {})
+        social_indicators = city_info.get('socialIndicators', {})
+        risk_level = city_info.get('riskLevel', 'medium')
+        
+        # Create comprehensive summary with proper field mapping
+        comprehensive_summary = {
+            "population": metrics.get('population'),
+            "medianIncome": metrics.get('medianIncome'),
+            "riskLevel": risk_level,
+            "data_sources": await self._get_data_sources(location, db),
+            "last_data_update": await self._get_last_update(location, db),
+            "geographic_level": level,
+            "relevant_datasets": [d.name for d in relevant_datasets],
+            "metrics": {
+                "population": metrics.get('population'),
+                "medianIncome": metrics.get('medianIncome'),
+                "crimeRate": metrics.get('crimeRate'),
+                "foreclosureRate": metrics.get('foreclosureRate'),
+                "vacancyRate": metrics.get('vacancyRate'),
+                "unemploymentRate": metrics.get('unemploymentRate'),
+                "homeValue": metrics.get('homeValue'),
+                "rentBurden": metrics.get('rentBurden'),
+                "educationLevel": metrics.get('educationLevel'),
+                "povertyRate": metrics.get('povertyRate'),
+                "airQuality": metrics.get('airQuality'),
+                "treeCanopy": metrics.get('treeCanopy'),
+                "transitAccess": metrics.get('transitAccess'),
+                "walkability": metrics.get('walkability'),
+                "bikeability": metrics.get('bikeability')
+            },
+            "demographics": demographics,
+            "economicIndicators": economic_indicators,
+            "infrastructureMetrics": infrastructure_metrics,
+            "socialIndicators": social_indicators
+        }
+        
         # Create report
         report = CityReport(
-            county=location,
+            county=city_name,
             generated_at=datetime.utcnow(),
             cached=False,
-            summary={
-                "data_sources": await self._get_data_sources(location, db),
-                "last_data_update": await self._get_last_update(location, db),
-                "geographic_level": level,
-                "relevant_datasets": [d.name for d in relevant_datasets]
-            },
+            summary=comprehensive_summary,
             problems=formatted_problems
         )
         
@@ -303,12 +354,132 @@ class ReportGeneratorService:
             if 'solution' not in problem_data:
                 raise ValueError("Missing 'solution' field in problem data")
             
+            # Build metrics dictionary with metric, value, threshold if they exist
+            metrics_dict = problem_data.get("metrics", {})
+            
+            # Extract metric badge fields for CityPopup component
+            metric_name = "Unknown"
+            metric_value = 0
+            metric_threshold = 0
+            
+            # Determine metric name and extract appropriate values based on problem category
+            if problem_data.get("category") == "housing":
+                metric_name = "Housing Affordability"
+                # Extract rent burden percentage from current_value
+                if "current_value" in metrics_dict:
+                    current_val = str(metrics_dict["current_value"])
+                    import re
+                    # Look for percentage values in the description
+                    if "rent burden" in current_val.lower() or "rental" in current_val.lower():
+                        numbers = re.findall(r'(\d+(?:\.\d+)?)%', current_val)
+                        if numbers:
+                            metric_value = float(numbers[0])
+                        else:
+                            # Fallback: look for any percentage
+                            numbers = re.findall(r'(\d+(?:\.\d+)?)%', current_val)
+                            if numbers:
+                                metric_value = float(numbers[0])
+                metric_threshold = 30  # 30% rent burden threshold
+                
+            elif problem_data.get("category") == "safety":
+                metric_name = "Crime Rate"
+                # Extract crime rate per 1000 residents
+                if "current_value" in metrics_dict:
+                    current_val = str(metrics_dict["current_value"])
+                    import re
+                    # Look for "per 1,000" or "per 1000" pattern
+                    if "per 1,000" in current_val or "per 1000" in current_val:
+                        numbers = re.findall(r'(\d+(?:,\d+)*(?:\.\d+)?)', current_val)
+                        if numbers:
+                            metric_value = float(numbers[0].replace(',', ''))
+                    else:
+                        # Look for any large number that could be crime rate
+                        numbers = re.findall(r'(\d+(?:,\d+)*(?:\.\d+)?)', current_val)
+                        if numbers:
+                            # Take the first reasonable number (not too large)
+                            for num_str in numbers:
+                                num_val = float(num_str.replace(',', ''))
+                                if 0 < num_val < 1000:  # Reasonable crime rate range
+                                    metric_value = num_val
+                                    break
+                metric_threshold = 5  # 5 per 1000 crime rate threshold
+                
+            elif problem_data.get("category") == "economic":
+                metric_name = "Unemployment"
+                # Extract unemployment percentage
+                if "current_value" in metrics_dict:
+                    current_val = str(metrics_dict["current_value"])
+                    import re
+                    # Look for unemployment percentage
+                    if "unemployment" in current_val.lower():
+                        numbers = re.findall(r'(\d+(?:\.\d+)?)%', current_val)
+                        if numbers:
+                            metric_value = float(numbers[0])
+                        else:
+                            # Look for any percentage in the text
+                            numbers = re.findall(r'(\d+(?:\.\d+)?)%', current_val)
+                            if numbers:
+                                metric_value = float(numbers[0])
+                metric_threshold = 5  # 5% unemployment threshold
+                
+            elif problem_data.get("category") == "environment":
+                metric_name = "Air Quality"
+                # Extract AQI value
+                if "current_value" in metrics_dict:
+                    current_val = str(metrics_dict["current_value"])
+                    import re
+                    # Look for AQI or PM2.5 values
+                    if "aqi" in current_val.lower() or "pm2.5" in current_val.lower():
+                        numbers = re.findall(r'(\d+(?:,\d+)*(?:\.\d+)?)', current_val)
+                        if numbers:
+                            metric_value = float(numbers[0].replace(',', ''))
+                metric_threshold = 50  # AQI threshold
+                
+            elif problem_data.get("category") == "infrastructure":
+                metric_name = "Code Violations"
+                # Extract violation count
+                if "current_value" in metrics_dict:
+                    current_val = str(metrics_dict["current_value"])
+                    import re
+                    # Look for violation numbers
+                    if "violation" in current_val.lower():
+                        numbers = re.findall(r'(\d+(?:,\d+)*(?:\.\d+)?)', current_val)
+                        if numbers:
+                            metric_value = float(numbers[0].replace(',', ''))
+                metric_threshold = 1000  # Violation threshold
+                
+            else:
+                metric_name = "Issue Severity"
+                metric_threshold = 10
+                # Try to extract any reasonable percentage
+                if "current_value" in metrics_dict:
+                    current_val = str(metrics_dict["current_value"])
+                    import re
+                    numbers = re.findall(r'(\d+(?:\.\d+)?)%', current_val)
+                    if numbers:
+                        metric_value = float(numbers[0])
+            
+            # Add metric badge fields to metrics_dict
+            metrics_dict.update({
+                "metric": metric_name,
+                "value": metric_value,
+                "threshold": metric_threshold,
+                "current_value": metrics_dict.get("current_value", "Unknown"),
+                "target_value": metrics_dict.get("target_value", "Unknown"),
+                "comparison": metrics_dict.get("comparison", "Unknown"),
+                "trend": metrics_dict.get("trend", "Unknown")
+            })
+            
             problem = Problem(
                 id=problem_id,
                 title=problem_data["title"],
                 severity=problem_data.get("severity", "medium"),
                 description=problem_data["description"],
-                metrics=problem_data.get("metrics", {}),
+                category=problem_data.get("category"),
+                metric=metric_name,
+                value=metric_value,
+                threshold=metric_threshold,
+                metrics=metrics_dict,
                 solution=problem_data["solution"]
             )
             

@@ -38,19 +38,43 @@ class ProblemSolution(BaseModel):
     description: str
     estimated_cost: Optional[str] = None
     expected_impact: Optional[str] = None
+    timeline: Optional[str] = None
+    impact: Optional[str] = None
+    steps: Optional[List[str]] = None
+    costBreakdown: Optional[List[Dict[str, str]]] = None
+    implementationPhases: Optional[List[Dict[str, Any]]] = None
+    successMetrics: Optional[List[str]] = None
+    similarCities: Optional[List[Dict[str, str]]] = None
+    requiredDepartments: Optional[List[str]] = None
+    stakeholders: Optional[List[str]] = None
+    fundingSources: Optional[List[str]] = None
+    risks: Optional[List[str]] = None
 
 class Problem(BaseModel):
     id: str
     title: str
     severity: str
     description: str
+    category: Optional[str] = None
+    metric: Optional[str] = None
+    value: Optional[float] = None
+    threshold: Optional[float] = None
     metrics: Dict[str, Any]
     solution: ProblemSolution
 
 class ReportSummary(BaseModel):
     population: Optional[int] = None
+    medianIncome: Optional[int] = None
+    riskLevel: Optional[str] = None
     data_sources: List[str]
     last_data_update: Optional[str] = None
+    geographic_level: Optional[str] = None
+    relevant_datasets: Optional[List[str]] = None
+    metrics: Optional[Dict[str, Any]] = None
+    demographics: Optional[Dict[str, Any]] = None
+    economicIndicators: Optional[Dict[str, Any]] = None
+    infrastructureMetrics: Optional[Dict[str, Any]] = None
+    socialIndicators: Optional[Dict[str, Any]] = None
 
 class CityReport(BaseModel):
     county: str

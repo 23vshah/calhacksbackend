@@ -182,8 +182,8 @@ Provide weights between 0-1 and clear reasoning for each."""
         except Exception as e:
             raise Exception(f"Claude weight calculation failed: {str(e)}")
     
-    def synthesize_problems(self, county_data: Dict[str, Any], county: str) -> List[Dict[str, Any]]:
-        """Synthesize problems and solutions from county data"""
+    def synthesize_problems(self, county_data: Dict[str, Any], county: str) -> Dict[str, Any]:
+        """Synthesize comprehensive city report with separate calls for city info and problems"""
         
         print(f"🔍 Claude Provider - Processing data for {county}")
         print(f"Raw county_data: {county_data}")
@@ -233,16 +233,92 @@ Provide weights between 0-1 and clear reasoning for each."""
         print(f"📝 Data summary being sent to Claude:")
         print(f"{data_text[:500]}...")
         
-        prompt = f"""You are an expert urban planning analyst specializing in community development and policy recommendations. Based on this comprehensive data analysis for {county}:
+        # FIRST CALL: Generate comprehensive city information
+        city_info_prompt = f"""You are an expert urban planning analyst. Based on this data analysis for {county}:
 
 {data_text}
 
-Generate 2-4 most pressing community problems that require immediate policy intervention. For each problem, provide:
+Generate comprehensive city information including demographics, economic indicators, and key metrics. Return ONLY valid JSON with this EXACT structure:
 
-1. **Problem Analysis**: Clear identification of the issue with specific data points
-2. **Root Cause Analysis**: Why this problem exists in this community
-3. **Policy Solution**: Evidence-based policy recommendation with implementation steps
-4. **Expected Outcomes**: Quantifiable impact metrics
+{{
+  "name": "{county}",
+  "county": "{county} County",
+  "riskLevel": "high|medium|low",
+  "metrics": {{
+    "population": 1234567,
+    "medianIncome": 75000,
+    "crimeRate": 0.045,
+    "foreclosureRate": 0.012,
+    "vacancyRate": 0.08,
+    "unemploymentRate": 0.055,
+    "homeValue": 850000,
+    "rentBurden": 0.35,
+    "educationLevel": 0.78,
+    "povertyRate": 0.15,
+    "airQuality": 65,
+    "treeCanopy": 0.25,
+    "transitAccess": 0.68,
+    "walkability": 72,
+    "bikeability": 58
+  }},
+  "demographics": {{
+    "ageDistribution": {{
+      "under18": 0.22,
+      "18to34": 0.28,
+      "35to54": 0.25,
+      "55to64": 0.12,
+      "over65": 0.13
+    }},
+    "raceEthnicity": {{
+      "white": 0.45,
+      "hispanic": 0.28,
+      "black": 0.12,
+      "asian": 0.10,
+      "other": 0.05
+    }},
+    "householdComposition": {{
+      "familyHouseholds": 0.65,
+      "nonFamilyHouseholds": 0.35,
+      "singleParent": 0.15
+    }}
+  }},
+  "economicIndicators": {{
+    "gdp": 125000000000,
+    "medianRent": 2800,
+    "medianHomePrice": 850000,
+    "jobGrowth": 0.025,
+    "businessCount": 45000,
+    "startupDensity": 0.12,
+    "ventureCapital": 2500000000
+  }},
+  "infrastructureMetrics": {{
+    "roadCondition": 0.72,
+    "bridgeCondition": 0.68,
+    "waterSystem": 0.85,
+    "sewerSystem": 0.78,
+    "publicTransit": 0.65,
+    "broadbandAccess": 0.92,
+    "renewableEnergy": 0.35
+  }},
+  "socialIndicators": {{
+    "lifeExpectancy": 78.5,
+    "infantMortality": 4.2,
+    "highSchoolGraduation": 0.88,
+    "collegeGraduation": 0.45,
+    "foodSecurity": 0.85,
+    "homelessness": 0.008,
+    "mentalHealthAccess": 0.72
+  }}
+}}
+
+Use realistic values based on typical urban areas. Focus on metrics that would be relevant for policy analysis."""
+        
+        # SECOND CALL: Generate detailed problems and solutions
+        problems_prompt = f"""You are an expert urban planning analyst specializing in community development and policy recommendations. Based on this comprehensive data analysis for {county}:
+
+{data_text}
+
+Generate 2-3 most pressing community problems that require immediate policy intervention. For each problem, provide comprehensive details including implementation phases, cost breakdown, success metrics, and stakeholder information.
 
 CRITICAL: Return ONLY a valid JSON array. No markdown, no explanations, no additional text. Start with [ and end with ].
 
@@ -252,14 +328,85 @@ Return JSON array with this EXACT structure:
     "title": "Concise Problem Title (5-8 words)",
     "description": "Detailed 2-3 sentence explanation of the problem, including specific data points and why it's concerning for this community. Reference actual numbers from the data.",
     "severity": "high|medium|low",
+    "category": "housing|economic|safety|environment|infrastructure|social",
     "solution": {{
       "title": "Specific Policy Solution Name",
       "description": "Detailed implementation plan with specific steps, partnerships needed, and timeline. Reference successful implementations in similar communities.",
       "estimated_cost": "Realistic cost estimate with funding sources (e.g., '$2.5M annually from state grants and local budget')",
-      "expected_impact": "Specific, measurable outcomes with timeline (e.g., '25% reduction in youth arrests within 18 months')"
+      "expected_impact": "Specific, measurable outcomes with timeline (e.g., '25% reduction in youth arrests within 18 months')",
+      "timeline": "6-18 months",
+      "impact": "Specific measurable outcomes",
+      "steps": [
+        "Step 1: Establish community advisory board",
+        "Step 2: Partner with local non-profits",
+        "Step 3: Develop mentorship matching system",
+        "Step 4: Create job training programs",
+        "Step 5: Implement early intervention protocols"
+      ],
+      "costBreakdown": [
+        {{"item": "Staff salaries", "amount": "$1.2M"}},
+        {{"item": "Program materials", "amount": "$300K"}},
+        {{"item": "Community outreach", "amount": "$200K"}},
+        {{"item": "Evaluation and monitoring", "amount": "$150K"}}
+      ],
+      "implementationPhases": [
+        {{
+          "phase": "Planning and Setup",
+          "duration": "2-3 months",
+          "milestones": [
+            "Establish governance structure",
+            "Secure funding commitments",
+            "Hire key staff"
+          ]
+        }},
+        {{
+          "phase": "Pilot Implementation",
+          "duration": "3-6 months",
+          "milestones": [
+            "Launch pilot program",
+            "Begin community outreach",
+            "Establish partnerships"
+          ]
+        }}
+      ],
+      "successMetrics": [
+        "25% reduction in target metric within 18 months",
+        "80% participant satisfaction rate",
+        "90% program completion rate",
+        "15% improvement in community perception"
+      ],
+      "similarCities": [
+        {{"city": "Portland, OR", "outcome": "Reduced youth crime by 30% in 2 years"}},
+        {{"city": "Austin, TX", "outcome": "Improved community engagement by 40%"}}
+      ],
+      "requiredDepartments": [
+        "City Planning",
+        "Community Development",
+        "Police Department",
+        "Social Services"
+      ],
+      "stakeholders": [
+        "Local government officials",
+        "Community organizations",
+        "Residents and families",
+        "Local businesses",
+        "Educational institutions"
+      ],
+      "fundingSources": [
+        "State community development grants",
+        "Federal HUD funding",
+        "Local budget allocation",
+        "Private foundation grants"
+      ],
+      "risks": [
+        "Community resistance to new programs",
+        "Funding shortfalls",
+        "Staff turnover",
+        "Regulatory compliance issues"
+      ]
     }},
     "metrics": {{
-      "current_value": "Current metric value from data",
+      "current_value": "Current metric value from data (use percentages for rates like unemployment, crime rates per 1000, rent burden; use raw numbers for counts like violations)",
       "target_value": "Realistic target after intervention",
       "comparison": "How this compares to regional/state averages",
       "trend": "Current trend direction"
@@ -274,6 +421,8 @@ Return JSON array with this EXACT structure:
 - Include specific metrics and comparisons
 - Prioritize problems with the highest community impact
 - Consider equity and social justice implications
+- Provide comprehensive implementation details
+- IMPORTANT: For metric values, use realistic percentages (0-100%) for rates and reasonable numbers for counts
 
 **Severity Guidelines:**
 - HIGH: Immediate threat to public safety, health, or economic stability
@@ -283,40 +432,87 @@ Return JSON array with this EXACT structure:
 Generate actionable, data-driven policy recommendations that a local government could implement within 6-18 months."""
 
         try:
-            response = self.client.messages.create(
+            # FIRST CALL: Get city information
+            print("🏙️ Making first LLM call for city information...")
+            city_response = self.client.messages.create(
                 model=self.model,
-                max_tokens=4000,  # Increased token limit
-                messages=[{"role": "user", "content": prompt}]
+                max_tokens=8000,
+                messages=[{"role": "user", "content": city_info_prompt}]
             )
             
-            content = response.content[0].text
-            print(f"Claude problems response: {content[:500]}...")  # Debug: print first 500 chars
+            city_content = city_response.content[0].text
+            print(f"Claude city info response: {city_content[:500]}...")
             
-            if not content.strip():
-                raise Exception("Empty response from Claude")
+            if not city_content.strip():
+                raise Exception("Empty city info response from Claude")
             
             # Extract JSON from markdown code blocks if present
-            content = extract_json_from_markdown(content)
+            city_content = extract_json_from_markdown(city_content)
+            city_info = json.loads(city_content)
+            print(f"✅ Successfully parsed city info from Claude")
+            
+            # SECOND CALL: Get problems and solutions
+            print("🔧 Making second LLM call for problems and solutions...")
+            problems_response = self.client.messages.create(
+                model=self.model,
+                max_tokens=20000,  # Increased token limit
+                messages=[{"role": "user", "content": problems_prompt}]
+            )
+            
+            problems_content = problems_response.content[0].text
+            print(f"Claude problems response: {problems_content[:500]}...")
+            
+            if not problems_content.strip():
+                raise Exception("Empty problems response from Claude")
+            
+            # Extract JSON from markdown code blocks if present
+            problems_content = extract_json_from_markdown(problems_content)
             
             # Try to fix common JSON issues
-            content = self._fix_json_response(content)
+            problems_content = self._fix_json_response(problems_content)
             
-            problems = json.loads(content)
+            # Try to parse JSON with multiple strategies
+            problems = None
+            parse_attempts = [
+                problems_content,
+                problems_content + ']',  # Try adding closing bracket
+                problems_content[:-1] + ']' if problems_content.endswith(',') else problems_content + ']',  # Remove trailing comma and add bracket
+            ]
+            
+            for i, attempt_content in enumerate(parse_attempts):
+                try:
+                    problems = json.loads(attempt_content)
+                    print(f"✅ Successfully parsed problems on attempt {i+1}")
+                    break
+                except json.JSONDecodeError as e:
+                    print(f"❌ Parse attempt {i+1} failed: {str(e)}")
+                    if i == len(parse_attempts) - 1:  # Last attempt
+                        raise e
+                    continue
+            
+            if problems is None:
+                raise Exception("All JSON parsing attempts failed")
+            
             print(f"✅ Successfully parsed {len(problems)} problems from Claude")
-            return problems
+            
+            # Combine both responses
+            combined_response = {
+                "cityInfo": city_info,
+                "problems": problems
+            }
+            
+            return combined_response
             
         except json.JSONDecodeError as e:
             print(f"❌ JSON Decode Error: {str(e)}")
-            print(f"❌ Full response content: {content}")
-            raise Exception(f"Claude problem synthesis failed: Invalid JSON response. Error: {str(e)}. Content: {content[:500]}...")
+            if 'city_content' in locals():
+                print(f"❌ City content: {city_content[:500]}...")
+            if 'problems_content' in locals():
+                print(f"❌ Problems content: {problems_content[:500]}...")
+            raise Exception(f"Claude report synthesis failed: Invalid JSON response. Error: {str(e)}")
         except Exception as e:
             print(f"❌ General Error: {str(e)}")
-            # Only print content if it exists (not for connection errors)
-            if 'content' in locals():
-                print(f"❌ Full response content: {content}")
-            else:
-                print(f"❌ No response content available (connection error)")
-            raise Exception(f"Claude problem synthesis failed: {str(e)}")
+            raise Exception(f"Claude report synthesis failed: {str(e)}")
     
     def _fix_json_response(self, content: str) -> str:
         """Fix common JSON issues in Claude responses"""
@@ -342,6 +538,28 @@ Generate actionable, data-driven policy recommendations that a local government 
         
         # Remove trailing commas before closing brackets
         content = re.sub(r',(\s*[}\]])', r'\1', content)
+        
+        # Fix common JSON issues
+        # Remove any incomplete objects at the end
+        if content.count('{') > content.count('}'):
+            # Find the last complete object
+            brace_count = 0
+            last_complete_pos = -1
+            for i, char in enumerate(content):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        last_complete_pos = i
+                        break
+            
+            if last_complete_pos > 0:
+                # Find the end of this object in the array
+                content = content[:last_complete_pos + 1]
+                # Add closing bracket if needed
+                if not content.endswith(']'):
+                    content += ']'
         
         # Ensure it's a valid JSON array
         if not content.startswith('['):
@@ -498,8 +716,11 @@ Provide weights between 0-1 and clear reasoning for each."""
         except Exception as e:
             raise Exception(f"OpenAI weight calculation failed: {str(e)}")
     
-    async def synthesize_problems(self, county_data: Dict[str, Any], county: str) -> List[Dict[str, Any]]:
-        """Synthesize problems and solutions from county data"""
+    async def synthesize_problems(self, county_data: Dict[str, Any], county: str) -> Dict[str, Any]:
+        """Synthesize comprehensive city report with separate calls for city info and problems"""
+        
+        print(f"🔍 OpenAI Provider - Processing data for {county}")
+        print(f"Raw county_data: {county_data}")
         
         # Extract and format data more intelligently
         data_summary = []
@@ -542,17 +763,95 @@ Provide weights between 0-1 and clear reasoning for each."""
                     data_summary.append(f"- {metric}: {value}")
         
         data_text = "\n".join(data_summary)
+        print(f"📝 Data summary being sent to OpenAI:")
+        print(f"{data_text[:500]}...")
         
-        prompt = f"""You are an expert urban planning analyst specializing in community development and policy recommendations. Based on this comprehensive data analysis for {county}:
+        # FIRST CALL: Generate comprehensive city information
+        city_info_prompt = f"""You are an expert urban planning analyst. Based on this data analysis for {county}:
 
 {data_text}
 
-Generate 2-4 most pressing community problems that require immediate policy intervention. For each problem, provide:
+Generate comprehensive city information including demographics, economic indicators, and key metrics. Return ONLY valid JSON with this EXACT structure:
 
-1. **Problem Analysis**: Clear identification of the issue with specific data points
-2. **Root Cause Analysis**: Why this problem exists in this community
-3. **Policy Solution**: Evidence-based policy recommendation with implementation steps
-4. **Expected Outcomes**: Quantifiable impact metrics
+{{
+  "name": "{county}",
+  "county": "{county} County",
+  "riskLevel": "high|medium|low",
+  "metrics": {{
+    "population": 1234567,
+    "medianIncome": 75000,
+    "crimeRate": 0.045,
+    "foreclosureRate": 0.012,
+    "vacancyRate": 0.08,
+    "unemploymentRate": 0.055,
+    "homeValue": 850000,
+    "rentBurden": 0.35,
+    "educationLevel": 0.78,
+    "povertyRate": 0.15,
+    "airQuality": 65,
+    "treeCanopy": 0.25,
+    "transitAccess": 0.68,
+    "walkability": 72,
+    "bikeability": 58
+  }},
+  "demographics": {{
+    "ageDistribution": {{
+      "under18": 0.22,
+      "18to34": 0.28,
+      "35to54": 0.25,
+      "55to64": 0.12,
+      "over65": 0.13
+    }},
+    "raceEthnicity": {{
+      "white": 0.45,
+      "hispanic": 0.28,
+      "black": 0.12,
+      "asian": 0.10,
+      "other": 0.05
+    }},
+    "householdComposition": {{
+      "familyHouseholds": 0.65,
+      "nonFamilyHouseholds": 0.35,
+      "singleParent": 0.15
+    }}
+  }},
+  "economicIndicators": {{
+    "gdp": 125000000000,
+    "medianRent": 2800,
+    "medianHomePrice": 850000,
+    "jobGrowth": 0.025,
+    "businessCount": 45000,
+    "startupDensity": 0.12,
+    "ventureCapital": 2500000000
+  }},
+  "infrastructureMetrics": {{
+    "roadCondition": 0.72,
+    "bridgeCondition": 0.68,
+    "waterSystem": 0.85,
+    "sewerSystem": 0.78,
+    "publicTransit": 0.65,
+    "broadbandAccess": 0.92,
+    "renewableEnergy": 0.35
+  }},
+  "socialIndicators": {{
+    "lifeExpectancy": 78.5,
+    "infantMortality": 4.2,
+    "highSchoolGraduation": 0.88,
+    "collegeGraduation": 0.45,
+    "foodSecurity": 0.85,
+    "homelessness": 0.008,
+    "mentalHealthAccess": 0.72
+  }}
+}}
+
+Use realistic values based on typical urban areas. Focus on metrics that would be relevant for policy analysis."""
+        
+        # SECOND CALL: Generate detailed problems and solutions
+        problems_prompt = f"""You are an expert urban planning analyst specializing in community development and policy recommendations. Based on this comprehensive data analysis for {county}:
+
+{data_text}
+
+Generate 3-5 most pressing community problems that require immediate policy intervention. For each problem, provide comprehensive details including implementation phases, cost breakdown, success metrics, and stakeholder information.
 
 CRITICAL: Return ONLY a valid JSON array. No markdown, no explanations, no additional text. Start with [ and end with ].
 
@@ -562,14 +861,85 @@ Return JSON array with this EXACT structure:
     "title": "Concise Problem Title (5-8 words)",
     "description": "Detailed 2-3 sentence explanation of the problem, including specific data points and why it's concerning for this community. Reference actual numbers from the data.",
     "severity": "high|medium|low",
+    "category": "housing|economic|safety|environment|infrastructure|social",
     "solution": {{
       "title": "Specific Policy Solution Name",
       "description": "Detailed implementation plan with specific steps, partnerships needed, and timeline. Reference successful implementations in similar communities.",
       "estimated_cost": "Realistic cost estimate with funding sources (e.g., '$2.5M annually from state grants and local budget')",
-      "expected_impact": "Specific, measurable outcomes with timeline (e.g., '25% reduction in youth arrests within 18 months')"
+      "expected_impact": "Specific, measurable outcomes with timeline (e.g., '25% reduction in youth arrests within 18 months')",
+      "timeline": "6-18 months",
+      "impact": "Specific measurable outcomes",
+      "steps": [
+        "Step 1: Establish community advisory board",
+        "Step 2: Partner with local non-profits",
+        "Step 3: Develop mentorship matching system",
+        "Step 4: Create job training programs",
+        "Step 5: Implement early intervention protocols"
+      ],
+      "costBreakdown": [
+        {{"item": "Staff salaries", "amount": "$1.2M"}},
+        {{"item": "Program materials", "amount": "$300K"}},
+        {{"item": "Community outreach", "amount": "$200K"}},
+        {{"item": "Evaluation and monitoring", "amount": "$150K"}}
+      ],
+      "implementationPhases": [
+        {{
+          "phase": "Planning and Setup",
+          "duration": "2-3 months",
+          "milestones": [
+            "Establish governance structure",
+            "Secure funding commitments",
+            "Hire key staff"
+          ]
+        }},
+        {{
+          "phase": "Pilot Implementation",
+          "duration": "3-6 months",
+          "milestones": [
+            "Launch pilot program",
+            "Begin community outreach",
+            "Establish partnerships"
+          ]
+        }}
+      ],
+      "successMetrics": [
+        "25% reduction in target metric within 18 months",
+        "80% participant satisfaction rate",
+        "90% program completion rate",
+        "15% improvement in community perception"
+      ],
+      "similarCities": [
+        {{"city": "Portland, OR", "outcome": "Reduced youth crime by 30% in 2 years"}},
+        {{"city": "Austin, TX", "outcome": "Improved community engagement by 40%"}}
+      ],
+      "requiredDepartments": [
+        "City Planning",
+        "Community Development",
+        "Police Department",
+        "Social Services"
+      ],
+      "stakeholders": [
+        "Local government officials",
+        "Community organizations",
+        "Residents and families",
+        "Local businesses",
+        "Educational institutions"
+      ],
+      "fundingSources": [
+        "State community development grants",
+        "Federal HUD funding",
+        "Local budget allocation",
+        "Private foundation grants"
+      ],
+      "risks": [
+        "Community resistance to new programs",
+        "Funding shortfalls",
+        "Staff turnover",
+        "Regulatory compliance issues"
+      ]
     }},
     "metrics": {{
-      "current_value": "Current metric value from data",
+      "current_value": "Current metric value from data (use percentages for rates like unemployment, crime rates per 1000, rent burden; use raw numbers for counts like violations)",
       "target_value": "Realistic target after intervention",
       "comparison": "How this compares to regional/state averages",
       "trend": "Current trend direction"
@@ -584,6 +954,8 @@ Return JSON array with this EXACT structure:
 - Include specific metrics and comparisons
 - Prioritize problems with the highest community impact
 - Consider equity and social justice implications
+- Provide comprehensive implementation details
+- IMPORTANT: For metric values, use realistic percentages (0-100%) for rates and reasonable numbers for counts
 
 **Severity Guidelines:**
 - HIGH: Immediate threat to public safety, health, or economic stability
@@ -593,19 +965,122 @@ Return JSON array with this EXACT structure:
 Generate actionable, data-driven policy recommendations that a local government could implement within 6-18 months."""
 
         try:
-            response = await self.client.chat.completions.create(
+            # FIRST CALL: Get city information
+            print("🏙️ Making first OpenAI call for city information...")
+            city_response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=3000,
+                messages=[{"role": "user", "content": city_info_prompt}],
+                max_tokens=4000,
                 temperature=0.1
             )
             
-            content = response.choices[0].message.content
-            problems = json.loads(content)
-            return problems
+            city_content = city_response.choices[0].message.content
+            print(f"OpenAI city info response: {city_content[:500]}...")
             
+            if not city_content.strip():
+                raise Exception("Empty city info response from OpenAI")
+            
+            # Extract JSON from markdown code blocks if present
+            city_content = extract_json_from_markdown(city_content)
+            city_info = json.loads(city_content)
+            print(f"✅ Successfully parsed city info from OpenAI")
+            
+            # SECOND CALL: Get problems and solutions
+            print("🔧 Making second OpenAI call for problems and solutions...")
+            problems_response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": problems_prompt}],
+                max_tokens=12000,  # Increased token limit
+                temperature=0.1
+            )
+            
+            problems_content = problems_response.choices[0].message.content
+            print(f"OpenAI problems response: {problems_content[:500]}...")
+            
+            if not problems_content.strip():
+                raise Exception("Empty problems response from OpenAI")
+            
+            # Extract JSON from markdown code blocks if present
+            problems_content = extract_json_from_markdown(problems_content)
+            
+            # Try to fix common JSON issues
+            problems_content = self._fix_json_response(problems_content)
+            
+            # Try to parse JSON with multiple strategies
+            problems = None
+            parse_attempts = [
+                problems_content,
+                problems_content + ']',  # Try adding closing bracket
+                problems_content[:-1] + ']' if problems_content.endswith(',') else problems_content + ']',  # Remove trailing comma and add bracket
+            ]
+            
+            for i, attempt_content in enumerate(parse_attempts):
+                try:
+                    problems = json.loads(attempt_content)
+                    print(f"✅ Successfully parsed problems on attempt {i+1}")
+                    break
+                except json.JSONDecodeError as e:
+                    print(f"❌ Parse attempt {i+1} failed: {str(e)}")
+                    if i == len(parse_attempts) - 1:  # Last attempt
+                        raise e
+                    continue
+            
+            if problems is None:
+                raise Exception("All JSON parsing attempts failed")
+            
+            print(f"✅ Successfully parsed {len(problems)} problems from OpenAI")
+            
+            # Combine both responses
+            combined_response = {
+                "cityInfo": city_info,
+                "problems": problems
+            }
+            
+            return combined_response
+            
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON Decode Error: {str(e)}")
+            if 'city_content' in locals():
+                print(f"❌ City content: {city_content[:500]}...")
+            if 'problems_content' in locals():
+                print(f"❌ Problems content: {problems_content[:500]}...")
+            raise Exception(f"OpenAI report synthesis failed: Invalid JSON response. Error: {str(e)}")
         except Exception as e:
-            raise Exception(f"OpenAI problem synthesis failed: {str(e)}")
+            print(f"❌ General Error: {str(e)}")
+            raise Exception(f"OpenAI report synthesis failed: {str(e)}")
+    
+    def _fix_json_response(self, content: str) -> str:
+        """Fix common JSON issues in OpenAI responses"""
+        content = content.strip()
+        
+        # Remove any text after the JSON array/object
+        # Find the last complete JSON structure
+        if content.startswith('['):
+            # Find the matching closing bracket
+            bracket_count = 0
+            last_valid_pos = -1
+            for i, char in enumerate(content):
+                if char == '[':
+                    bracket_count += 1
+                elif char == ']':
+                    bracket_count -= 1
+                    if bracket_count == 0:
+                        last_valid_pos = i
+                        break
+            
+            if last_valid_pos > 0:
+                content = content[:last_valid_pos + 1]
+        
+        # Remove trailing commas before closing brackets
+        content = re.sub(r',(\s*[}\]])', r'\1', content)
+        
+        # Ensure it's a valid JSON array
+        if not content.startswith('['):
+            # If it's a single object, wrap it in an array
+            if content.startswith('{'):
+                content = '[' + content + ']'
+        
+        return content
     
     async def _generate_strategy_async(self, prompt: str) -> Dict[str, Any]:
         """Generate aggregation strategy (OpenAI async version)"""
@@ -687,8 +1162,8 @@ class LLMService:
         else:
             return await self.provider.calculate_weights(metrics)
     
-    async def synthesize_problems(self, county_data: Dict[str, Any], county: str) -> List[Dict[str, Any]]:
-        """Synthesize problems and solutions from county data"""
+    async def synthesize_problems(self, county_data: Dict[str, Any], county: str) -> Dict[str, Any]:
+        """Synthesize comprehensive city report with separate calls for city info and problems"""
         
         # Debug: Print what's being sent to LLM
         print(f"🤖 LLM Input for {county}:")
