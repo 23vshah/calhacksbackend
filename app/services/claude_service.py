@@ -2,13 +2,18 @@ import json
 import os
 from typing import Dict, List, Any
 import anthropic
+from dotenv import load_dotenv
 from app.models import NormalizationProfile, MetricWeight
+
+# Load environment variables
+load_dotenv()
 
 class ClaudeService:
     def __init__(self):
         self.client = anthropic.Anthropic(
             api_key=os.getenv("ANTHROPIC_API_KEY")
         )
+        self.model = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
     
     async def analyze_schema(self, sample_data: str) -> NormalizationProfile:
         """Analyze dataset sample and return normalization profile"""
@@ -34,8 +39,8 @@ Respond in JSON format:
 Be specific about what each column measures and provide clear normalized names."""
 
         try:
-            response = await self.client.messages.create(
-                model="claude-haiku-4-5@20251001",
+            response = self.client.messages.create(
+                model=self.model,
                 max_tokens=2000,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -72,8 +77,8 @@ Return JSON array:
 Provide weights between 0-1 and clear reasoning for each."""
 
         try:
-            response = await self.client.messages.create(
-                model="claude-3-sonnet-20240229",
+            response = self.client.messages.create(
+                model=self.model,
                 max_tokens=2000,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -128,8 +133,8 @@ Return JSON array:
 Focus on actionable, data-driven insights."""
 
         try:
-            response = await self.client.messages.create(
-                model="claude-3-sonnet-20240229",
+            response = self.client.messages.create(
+                model=self.model,
                 max_tokens=3000,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -140,4 +145,19 @@ Focus on actionable, data-driven insights."""
             
         except Exception as e:
             raise Exception(f"Claude problem synthesis failed: {str(e)}")
+    
+    async def generate_response(self, prompt: str) -> str:
+        """Generate a generic response from Claude"""
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=2000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            content = response.content[0].text
+            return content
+            
+        except Exception as e:
+            raise Exception(f"Claude response generation failed: {str(e)}")
 

@@ -31,18 +31,29 @@ try:
 except ImportError:
     # Fallback - create a mock function for testing
     def get_sf311_offenses(page=1):
-        """Mock SF311 data - returns 10 items per page"""
+        """Mock SF311 data - returns 10 items per page with realistic SF coordinates"""
         offense_types = ["Graffiti", "Street Cleaning", "Blocked Driveway", "Pothole", "Broken Streetlight", 
                         "Illegal Dumping", "Noise Complaint", "Parking Violation", "Sidewalk Repair", "Tree Maintenance"]
-        neighborhoods = ["Mission", "SOMA", "Castro", "Haight", "Richmond", "Sunset", "Marina", "Nob Hill"]
+        
+        # Realistic SF coordinates for different neighborhoods
+        sf_locations = [
+            {"lat": 37.7749, "lng": -122.4194, "neighborhood": "Mission District", "address": "Mission St"},
+            {"lat": 37.7849, "lng": -122.4094, "neighborhood": "SOMA", "address": "Howard St"},
+            {"lat": 37.7611, "lng": -122.4369, "neighborhood": "Castro", "address": "Castro St"},
+            {"lat": 37.7699, "lng": -122.4469, "neighborhood": "Haight", "address": "Haight St"},
+            {"lat": 37.7804, "lng": -122.4602, "neighborhood": "Richmond", "address": "Geary Blvd"},
+            {"lat": 37.7599, "lng": -122.4148, "neighborhood": "Sunset", "address": "Irving St"},
+            {"lat": 37.8024, "lng": -122.4058, "neighborhood": "Marina", "address": "Chestnut St"},
+            {"lat": 37.7946, "lng": -122.4094, "neighborhood": "Nob Hill", "address": "California St"}
+        ]
         
         return [
             {
                 "offense_type": offense_types[i % len(offense_types)],
-                "description": f"311 request #{i+1} for {offense_types[i % len(offense_types)].lower()}",
+                "description": f"311 request #{i+1} for {offense_types[i % len(offense_types)].lower()} in {sf_locations[i % len(sf_locations)]['neighborhood']}",
                 "offense_id": f"311_{page}_{i+1:03d}",
-                "coordinates": f"(37.7{50+i}, -122.4{10+i})",
-                "address": f"{100+i} {neighborhoods[i % len(neighborhoods)]} St"
+                "coordinates": f"({sf_locations[i % len(sf_locations)]['lat']}, {sf_locations[i % len(sf_locations)]['lng']})",
+                "address": f"{100+i} {sf_locations[i % len(sf_locations)]['address']}"
             }
             for i in range(10)
         ]
@@ -336,15 +347,67 @@ class SF311Agent(BaseAgent):
             return "low"
     
     async def _identify_issues(self, filtered_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Identify community issues from 311 data using LLM analysis"""
+        """Convert filtered 311 data into issues format for frontend"""
         issues = []
         
         if not filtered_data:
             return issues
         
-        # Use LLM to analyze 311 requests and identify patterns
-        analyzed_issues = await self._llm_analyze_311_issues(filtered_data)
-        issues.extend(analyzed_issues)
+        # Convert each filtered 311 request into an issue format
+        for i, request in enumerate(filtered_data):
+            # Extract coordinates if available - check both direct coordinates and geographic_analysis
+            coordinates = None
+            neighborhood = request.get('neighborhood')
+            
+            # First try direct coordinates
+            if request.get('coordinates'):
+                coords_str = request['coordinates']
+                try:
+                    # Parse coordinates like "(37.7749, -122.4194)"
+                    coords_match = re.search(r'\((-?\d+\.?\d*),\s*(-?\d+\.?\d*)\)', coords_str)
+                    if coords_match:
+                        lat = float(coords_match.group(1))
+                        lng = float(coords_match.group(2))
+                        coordinates = [lng, lat]  # [longitude, latitude] for frontend
+                except (ValueError, IndexError):
+                    pass
+            
+            # If no direct coordinates, try geographic_analysis
+            if not coordinates and request.get('geographic_analysis', {}).get('coordinates'):
+                coords_str = request['geographic_analysis']['coordinates']
+                try:
+                    # Parse coordinates like "(37.7749, -122.4194)"
+                    coords_match = re.search(r'\((-?\d+\.?\d*),\s*(-?\d+\.?\d*)\)', coords_str)
+                    if coords_match:
+                        lat = float(coords_match.group(1))
+                        lng = float(coords_match.group(2))
+                        coordinates = [lng, lat]  # [longitude, latitude] for frontend
+                except (ValueError, IndexError):
+                    pass
+            
+            # Extract neighborhood from geographic_analysis if not set
+            if not neighborhood and request.get('geographic_analysis', {}).get('neighborhood'):
+                neighborhood = request['geographic_analysis']['neighborhood']
+            
+            # Create issue from 311 request
+            issue = {
+                "id": request.get('offense_id', f"sf311_{i}"),
+                "title": request.get('offense_type', 'SF311 Request'),
+                "description": request.get('description', 'No description available'),
+                "severity": request.get('severity', 'low'),
+                "source": "311",
+                "coordinates": coordinates,
+                "neighborhood": neighborhood,
+                "metadata": {
+                    "offense_id": request.get('offense_id', ''),
+                    "address": request.get('address', ''),
+                    "offense_type": request.get('offense_type', ''),
+                    "geographic_analysis": request.get('geographic_analysis', {}),
+                    "temporal_analysis": request.get('temporal_analysis', {}),
+                    "analysis_type": "direct_311_request"
+                }
+            }
+            issues.append(issue)
         
         return issues
     

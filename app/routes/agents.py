@@ -20,6 +20,21 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Cache storage
+sf311_cache = {
+    "issues": [],
+    "raw_requests": [],
+    "last_updated": None,
+    "total_requests": 0,
+    "filtered_requests": 0
+}
+
+neighborhood_insights_cache = {
+    "insights": [],
+    "summary": None,
+    "last_updated": None
+}
+
 # Initialize agents
 reddit_agent = RedditAgent()
 sf311_agent = SF311Agent()
@@ -123,6 +138,320 @@ async def trigger_sf311_agent(request: AgentTriggerRequest):
     except Exception as e:
         logger.error(f"SF311 agent trigger failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"SF311 agent failed: {str(e)}")
+
+@router.post("/agents/sf311/launch")
+async def launch_sf311_agent(
+    pages: int = 20,
+    filter_types: List[str] = None,
+    min_severity: str = "low",
+    clear_cache: bool = False
+):
+    """Launch SF311 agent to fetch real-time 311 data for map visualization"""
+    try:
+        logger.info(f"Launching SF311 agent with {pages} pages, clear_cache={clear_cache}")
+        
+        # Clear cache if requested
+        if clear_cache:
+            sf311_cache["issues"] = []
+            sf311_cache["raw_requests"] = []
+            sf311_cache["total_requests"] = 0
+            sf311_cache["filtered_requests"] = 0
+            logger.info("SF311 cache cleared")
+        
+        # Create SF311 agent and task
+        sf311_agent = SF311Agent()
+        sf311_task = SF311Task(
+            task_id=f"sf311_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+            agent_id="sf311_agent",
+            data={},
+            pages=pages,
+            filter_types=filter_types,
+            min_severity=min_severity
+        )
+        
+        # Execute the agent
+        result = await sf311_agent.execute(sf311_task)
+        
+        # Extract issues for frontend
+        issues = []
+        if result.data.get('issues'):
+            for issue in result.data['issues']:
+                # Extract coordinates if available - check multiple sources
+                coordinates = None
+                
+                # First try direct coordinates
+                if issue.get('coordinates'):
+                    coordinates = issue['coordinates']
+                # Then try metadata.geographic_analysis.coordinates
+                elif issue.get('metadata', {}).get('geographic_analysis', {}).get('coordinates'):
+                    coords_str = issue['metadata']['geographic_analysis']['coordinates']
+                    if coords_str:
+                        # Parse coordinates like "(37.7749, -122.4194)"
+                        import re
+                        coords_match = re.search(r'\((-?\d+\.?\d*),\s*(-?\d+\.?\d*)\)', coords_str)
+                        if coords_match:
+                            lat = float(coords_match.group(1))
+                            lng = float(coords_match.group(2))
+                            coordinates = [lng, lat]  # [longitude, latitude] for frontend
+                
+                # Extract neighborhood from multiple sources
+                neighborhood = (issue.get('neighborhood') or 
+                              issue.get('metadata', {}).get('geographic_analysis', {}).get('neighborhood'))
+                
+                issues.append({
+                    "id": issue.get('id', f"issue_{len(issues)}"),
+                    "title": issue.get('title', 'Unknown Issue'),
+                    "description": issue.get('description', ''),
+                    "severity": issue.get('severity', 'low'),
+                    "source": issue.get('source', '311'),
+                    "coordinates": coordinates,
+                    "neighborhood": neighborhood,
+                    "metadata": issue.get('metadata', {})
+                })
+        
+        # Also include raw 311 requests for detailed mapping
+        raw_requests = []
+        if result.data.get('filtered_data'):
+            for req in result.data['filtered_data']:
+                # Extract coordinates from raw request
+                coordinates = None
+                if req.get('coordinates'):
+                    coords_str = req['coordinates']
+                    import re
+                    coords_match = re.search(r'\((-?\d+\.?\d*),\s*(-?\d+\.?\d*)\)', coords_str)
+                    if coords_match:
+                        lat = float(coords_match.group(1))
+                        lng = float(coords_match.group(2))
+                        coordinates = [lng, lat]  # [longitude, latitude] for frontend
+                
+                raw_requests.append({
+                    "id": req.get('offense_id', f"request_{len(raw_requests)}"),
+                    "offense_type": req.get('offense_type', ''),
+                    "description": req.get('description', ''),
+                    "address": req.get('address', ''),
+                    "coordinates": coordinates,
+                    "neighborhood": req.get('neighborhood'),
+                    "severity": req.get('severity', 'low'),
+                    "offense_id": req.get('offense_id', '')
+                })
+        
+        # Merge with cache
+        sf311_cache["issues"].extend(issues)
+        sf311_cache["raw_requests"].extend(raw_requests)
+        sf311_cache["total_requests"] += result.total_requests
+        sf311_cache["filtered_requests"] += result.filtered_requests
+        sf311_cache["last_updated"] = datetime.utcnow().isoformat()
+        
+        return {
+            "success": True,
+            "status": result.status.value,
+            "issues": sf311_cache["issues"],  # Return all cached issues
+            "raw_requests": sf311_cache["raw_requests"],  # Return all cached requests
+            "summary": {
+                "total_requests": sf311_cache["total_requests"],
+                "filtered_requests": sf311_cache["filtered_requests"],
+                "issues_identified": len(sf311_cache["issues"]),
+                "geographic_patterns": result.geographic_patterns,
+                "insights": result.insights,
+                "cache_info": {
+                    "total_cached_issues": len(sf311_cache["issues"]),
+                    "total_cached_requests": len(sf311_cache["raw_requests"]),
+                    "new_issues_added": len(issues),
+                    "new_requests_added": len(raw_requests),
+                    "last_updated": sf311_cache["last_updated"]
+                }
+            },
+            "execution_time": result.execution_time
+        }
+        
+    except Exception as e:
+        logger.error(f"SF311 agent launch failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"SF311 agent failed: {str(e)}")
+
+@router.post("/agents/sf311/neighborhood-insights")
+async def get_neighborhood_insights(
+    pages: int = 10,
+    min_severity: str = "low"
+):
+    """Get LLM-generated insights for SF311 data grouped by neighborhood"""
+    try:
+        logger.info(f"Generating neighborhood insights with {pages} pages")
+        
+        # Reset cache every time for neighborhood insights
+        neighborhood_insights_cache["insights"] = []
+        neighborhood_insights_cache["summary"] = None
+        neighborhood_insights_cache["last_updated"] = None
+        logger.info("Neighborhood insights cache reset")
+        
+        # Create SF311 agent and task
+        sf311_agent = SF311Agent()
+        sf311_task = SF311Task(
+            task_id=f"sf311_insights_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+            agent_id="sf311_agent",
+            data={},
+            pages=pages,
+            filter_types=None,
+            min_severity=min_severity
+        )
+        
+        # Execute the agent
+        result = await sf311_agent.execute(sf311_task)
+        
+        # Group data by neighborhood
+        neighborhood_data = {}
+        if result.data.get('filtered_data'):
+            for request in result.data['filtered_data']:
+                neighborhood = request.get('neighborhood') or 'San Francisco'
+                if neighborhood not in neighborhood_data:
+                    neighborhood_data[neighborhood] = {
+                        'requests': [],
+                        'issue_types': {},
+                        'severity_counts': {'high': 0, 'medium': 0, 'low': 0},
+                        'total_requests': 0
+                    }
+                
+                neighborhood_data[neighborhood]['requests'].append(request)
+                neighborhood_data[neighborhood]['total_requests'] += 1
+                
+                # Count issue types
+                offense_type = request.get('offense_type', 'Unknown')
+                neighborhood_data[neighborhood]['issue_types'][offense_type] = \
+                    neighborhood_data[neighborhood]['issue_types'].get(offense_type, 0) + 1
+                
+                # Count severity
+                severity = request.get('severity', 'low')
+                neighborhood_data[neighborhood]['severity_counts'][severity] += 1
+        
+        # Generate insights for each neighborhood
+        neighborhood_insights = []
+        for neighborhood, data in neighborhood_data.items():
+            if data['total_requests'] == 0:
+                continue
+                
+            # Get sample requests (up to 3 per neighborhood)
+            sample_requests = data['requests'][:3]
+            
+            # Create insight data
+            insight_data = {
+                'neighborhood': neighborhood,
+                'total_requests': data['total_requests'],
+                'top_issue_types': dict(sorted(data['issue_types'].items(), 
+                                             key=lambda x: x[1], reverse=True)[:3]),
+                'severity_distribution': data['severity_counts'],
+                'sample_requests': [
+                    {
+                        'offense_type': req.get('offense_type', ''),
+                        'description': req.get('description', '')[:100] + '...' if len(req.get('description', '')) > 100 else req.get('description', ''),
+                        'severity': req.get('severity', 'low'),
+                        'address': req.get('address', '')
+                    }
+                    for req in sample_requests
+                ]
+            }
+            
+            # Generate LLM insights for this neighborhood
+            try:
+                from app.services.claude_service import ClaudeService
+                claude_service = ClaudeService()
+                
+                prompt = f"""
+                Analyze the following SF311 data for {neighborhood} neighborhood in San Francisco:
+                
+                Total Requests: {data['total_requests']}
+                Top Issue Types: {data['issue_types']}
+                Severity Distribution: {data['severity_counts']}
+                Sample Requests: {sample_requests}
+                
+                Provide 2-3 key insights about this neighborhood's community issues. Write each insight as a complete, well-formed sentence that:
+                1. Identifies patterns or trends in the data
+                2. Explains potential root causes or context
+                3. Suggests actionable recommendations
+                
+                Write insights as natural sentences, not bullet points or analysis summaries. Each insight should be 1-2 sentences long and provide meaningful context about the neighborhood's challenges.
+                
+                Format as a JSON object with 'insights' array containing the sentences.
+                """
+                
+                llm_response = await claude_service.generate_response(prompt)
+                
+                # Try to parse JSON response - handle markdown formatting
+                try:
+                    import json
+                    import re
+                    
+                    # Remove markdown code blocks if present
+                    cleaned_response = llm_response.strip()
+                    if cleaned_response.startswith('```json'):
+                        cleaned_response = cleaned_response[7:]  # Remove ```json
+                    if cleaned_response.endswith('```'):
+                        cleaned_response = cleaned_response[:-3]  # Remove ```
+                    
+                    # Clean up any extra whitespace
+                    cleaned_response = cleaned_response.strip()
+                    
+                    parsed_response = json.loads(cleaned_response)
+                    insights = parsed_response.get('insights', [])
+                    
+                    # Ensure insights is a list of strings
+                    if isinstance(insights, list):
+                        insight_data['llm_insights'] = insights
+                    else:
+                        insight_data['llm_insights'] = [str(insights)]
+                        
+                except Exception as parse_error:
+                    logger.warning(f"Failed to parse LLM response for {neighborhood}: {parse_error}")
+                    # Fallback: try to extract insights from the raw response
+                    try:
+                        # Look for insights array in the response
+                        insights_match = re.search(r'"insights":\s*\[(.*?)\]', llm_response, re.DOTALL)
+                        if insights_match:
+                            insights_text = insights_match.group(1)
+                            # Split by quotes and clean up
+                            insights = []
+                            for insight in insights_text.split('",'):
+                                insight = insight.strip().strip('"').strip()
+                                if insight:
+                                    insights.append(insight)
+                            insight_data['llm_insights'] = insights
+                        else:
+                            # Last resort: use the whole response as a single insight
+                            insight_data['llm_insights'] = [llm_response]
+                    except:
+                        insight_data['llm_insights'] = [llm_response]
+                    
+            except Exception as e:
+                logger.warning(f"Failed to generate LLM insights for {neighborhood}: {str(e)}")
+                top_issues = list(data['issue_types'].keys())[:2]
+                has_high_severity = data['severity_counts']['high'] > 0
+                
+                insight_data['llm_insights'] = [
+                    f"The {neighborhood} neighborhood shows {data['total_requests']} community service requests, with {top_issues[0]} being the most common issue type.",
+                    f"The severity distribution indicates {'significant high-priority concerns' if has_high_severity else 'moderate priority issues'} that require attention from city services."
+                ]
+            
+            neighborhood_insights.append(insight_data)
+        
+        # Sort by total requests
+        neighborhood_insights.sort(key=lambda x: x['total_requests'], reverse=True)
+        
+        # Store in cache
+        neighborhood_insights_cache["insights"] = neighborhood_insights
+        neighborhood_insights_cache["summary"] = {
+            "total_neighborhoods": len(neighborhood_insights),
+            "total_requests": sum(data['total_requests'] for data in neighborhood_data.values()),
+            "most_active_neighborhood": neighborhood_insights[0]['neighborhood'] if neighborhood_insights else None
+        }
+        neighborhood_insights_cache["last_updated"] = datetime.utcnow().isoformat()
+        
+        return {
+            "success": True,
+            "neighborhood_insights": neighborhood_insights_cache["insights"],
+            "summary": neighborhood_insights_cache["summary"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Neighborhood insights generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Neighborhood insights failed: {str(e)}")
 
 @router.post("/agents/analyze")
 async def trigger_knowledge_graph_agent(request: AgentTriggerRequest):

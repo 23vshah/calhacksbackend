@@ -45,7 +45,7 @@ async def test_llm_agents():
         logger.info(f"Issues found: {len(reddit_result.data.get('issues', []))}")
         
         if reddit_result.data.get('issues'):
-            for issue in reddit_result.data['issues'][:3]:  # Show first 3
+            for issue in reddit_result.data['issues'][:20]:  # Show first 3
                 logger.info(f"  - {issue.get('title', 'No title')} (Source: {issue.get('source', 'Unknown')})")
     except Exception as e:
         logger.error(f"Reddit Agent failed: {str(e)}")
@@ -69,7 +69,7 @@ async def test_llm_agents():
         logger.info(f"Issues found: {len(sf311_result.data.get('issues', []))}")
         
         if sf311_result.data.get('issues'):
-            for issue in sf311_result.data['issues'][:3]:  # Show first 3
+            for issue in sf311_result.data['issues'][:30]:  # Show first 3
                 logger.info(f"  - {issue.get('title', 'No title')} (Source: {issue.get('source', 'Unknown')})")
     except Exception as e:
         logger.error(f"SF311 Agent failed: {str(e)}")
